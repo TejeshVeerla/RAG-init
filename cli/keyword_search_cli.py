@@ -2,6 +2,7 @@ import string
 import argparse
 import json
 import io
+from nltk.stem import PorterStemmer
 
 def remove_punctuations(current):
 
@@ -27,22 +28,33 @@ def main() -> None:
     match args.command:
         case "search":
 
+            stemmer = PorterStemmer()
+
             res = []
             query = args.query.lower().split(" ")
 
             f = open("data/stopwords.txt","r")
+            #stop words 
             stopwords = f.read().splitlines()
             for i in range(len(stopwords)):
                 stopwords[i] = remove_punctuations(stopwords[i])
+            
+            filtered_query = []
+            for i in query:
+                if i.lower() not in stopwords:
+                    filtered_query.append(stemmer.stem(i.lower()))
 
-            print(f"Searching for: {query}")
+
+
+            print(f"Searching for: {filtered_query}")
 
             for i in d["movies"]:
                 current = i["title"]
                 target = remove_punctuations(current)
-                for q in query:
-                    
-                    if q not in stopwords and q in target.lower():
+                
+                for q in filtered_query:
+                   
+                    if q in target.lower():
                         res.append(i["title"])
                         break
                         
