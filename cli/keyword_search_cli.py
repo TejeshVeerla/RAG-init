@@ -1,3 +1,4 @@
+import string
 import argparse
 import json
 
@@ -16,16 +17,28 @@ def main() -> None:
 
     with open("data/movies.json","r") as file:
         d = json.load(file)
+
     match args.command:
         case "search":
+
             res = []
-            query = args.query
+            query = args.query.lower()
+
             print(f"Searching for: {query}")
+
             for i in d["movies"]:
-                if query in i["title"]:
+                current = i["title"]
+                punctuations = string.punctuation
+
+                translatetable = str.maketrans("","",punctuations)
+                target = current.translate(translatetable)
+                if query in target.lower():
                     res.append(i["title"])
+                    
             for i in range(len(res)):
                 print(f"{i+1}. {res[i]}")
+
+
         case _:
             parser.print_help()
 
