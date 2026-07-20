@@ -9,6 +9,9 @@ import pickle
 from collections import Counter
 
 #HELPER FUNCTIONS AND VARIABLES
+
+BM25_K1 = 1.5
+
 def remove_punctuations(current):
 
     punctuations = string.punctuation
@@ -53,6 +56,17 @@ def bm25_idf_command(term):
     term = tokenize_single_term(term)
     bm25_value = invIndex.get_bm25_idf(term=term) 
     return float(bm25_value)
+
+
+def bm25_tf_command(doc_id, term, k1=BM25_K1):
+    invIndex = InvertedIndex()
+    try:
+        invIndex.load()
+    except FileNotFoundError:
+        print("Error: File not Found, Try using build command first ")
+    term = tokenize_single_term(term)
+    return invIndex.get_bm25_tf(doc_id=doc_id,term=term,k1=k1)
+
 
 class InvertedIndex():
     
@@ -122,6 +136,11 @@ class InvertedIndex():
         bm25_idf = math.log((N-df+0.5) / (df+0.5)+1)
         return bm25_idf
 
+    def get_bm25_tf(self, doc_id, term, k1=BM25_K1):
+        raw_tf = self.get_tf(doc_id,term)
+        bm25_staturation_formula = (raw_tf*(k1+1))/ (raw_tf+k1)
+        return bm25_staturation_formula
+
 def build_command():
     inverted_index = InvertedIndex()
     inverted_index.Build()
@@ -152,6 +171,13 @@ def main() -> None:
     bm25_idf_parser = subparsers.add_parser("bm25idf", help="Get BM25 IDF score for a given term")
     bm25_idf_parser.add_argument("term", type=str, help="Term to get BM25 IDF score for")
     
+    bm25_tf_parser = subparsers.add_parser(
+        "bm25tf", help="Get BM25 TF score for a given document ID and term"
+    )
+    bm25_tf_parser.add_argument("doc_id", type=int, help="Document ID")
+    bm25_tf_parser.add_argument("term", type=str, help="Term to get BM25 TF score for")
+    bm25_tf_parser.add_argument("k1", type=float, nargs='?', default=BM25_K1, help="Tunable BM25 K1 parameter")
+
     args = parser.parse_args()
     
     match args.command:
@@ -228,6 +254,9 @@ def main() -> None:
             bm25idf = bm25_idf_command(args.term)
             print(f"BM25 IDF score of '{args.term}': {bm25idf:.2f}")
 
+        case "bm25tf":
+            bm25tf = bm25_tf_command(args.doc_id,args.term)
+            print(f"BM25 TF score of '{args.term}' in document '{args.doc_id}': {bm25tf:.2f}")
         case _:
             parser.print_help()
 
