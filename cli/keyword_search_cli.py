@@ -131,6 +131,10 @@ def main() -> None:
     idf_parser = subparsers.add_parser("idf",help="To retrieve information about Inverse document frequency of a term")
     idf_parser.add_argument("term",type=str,help="add the term to check idf")
 
+    tfidf_parser = subparsers.add_parser("tfidf",help="Retrieve tfidf value to given term")
+    tfidf_parser.add_argument("doc_id",type=int, help = "Enter the document id you want to check the frequency from:")
+    tfidf_parser.add_argument("term",type=str,help="add the term to check tf-idf")
+
     args = parser.parse_args()
     
 
@@ -192,6 +196,19 @@ def main() -> None:
             term = tokenize_single_term(term)
             idf_value = math.log((len(invIndex.docmap)+1)/(len(invIndex.index[term])+1)) 
             print(f"Inverse document frequency of '{args.term}': {idf_value:.2f}")
+
+        case "tfidf":
+            invIndex = InvertedIndex()
+            try:
+                invIndex.load()
+            except FileNotFoundError:
+                print("Error: File not Found, Try using build command first ")
+
+            term = tokenize_single_term(args.term)
+            idf_value = math.log((len(invIndex.docmap)+1)/(len(invIndex.index[term])+1)) 
+            tf_idf = invIndex.get_tf(args.doc_id,term)*idf_value 
+            print(f"TF-IDF score of '{args.term}' in document '{args.doc_id}': {tf_idf:.2f}")
+
         case _:
             parser.print_help()
 
