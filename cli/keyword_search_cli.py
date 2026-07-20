@@ -44,6 +44,16 @@ def tokenize_single_term(text:str):
         raise ValueError("Expected only one token")
     return "".join(token)
 
+def bm25_idf_command(term):
+    invIndex = InvertedIndex()
+    try:
+        invIndex.load()
+    except FileNotFoundError:
+        print("Error: File not Found, Try using build command first ")
+    term = tokenize_single_term(term)
+    bm25_value = invIndex.get_bm25_idf(term=term) 
+    return float(bm25_value)
+
 class InvertedIndex():
     
     def __init__(self):
@@ -106,7 +116,11 @@ class InvertedIndex():
             return 0
         return (self.term_frequencies[doc_id][term])
 
-
+    def get_bm25_idf(self,term:str) -> float :
+        df = len(self.index[term]) if term in self.index else 0
+        N = len(self.docmap)
+        bm25_idf = math.log((N-df+0.5) / (df+0.5)+1)
+        return bm25_idf
 
 def build_command():
     inverted_index = InvertedIndex()
@@ -135,10 +149,11 @@ def main() -> None:
     tfidf_parser.add_argument("doc_id",type=int, help = "Enter the document id you want to check the frequency from:")
     tfidf_parser.add_argument("term",type=str,help="add the term to check tf-idf")
 
+    bm25_idf_parser = subparsers.add_parser("bm25idf", help="Get BM25 IDF score for a given term")
+    bm25_idf_parser.add_argument("term", type=str, help="Term to get BM25 IDF score for")
+    
     args = parser.parse_args()
     
-
-
     match args.command:
         case "build":
             build_command()
@@ -208,6 +223,10 @@ def main() -> None:
             idf_value = math.log((len(invIndex.docmap)+1)/(len(invIndex.index[term])+1)) 
             tf_idf = invIndex.get_tf(args.doc_id,term)*idf_value 
             print(f"TF-IDF score of '{args.term}' in document '{args.doc_id}': {tf_idf:.2f}")
+        
+        case "bm25idf":
+            bm25idf = bm25_idf_command(args.term)
+            print(f"BM25 IDF score of '{args.term}': {bm25idf:.2f}")
 
         case _:
             parser.print_help()
@@ -215,4 +234,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-    
