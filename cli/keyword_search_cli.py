@@ -3,7 +3,7 @@ import argparse
 import json
 import io
 from nltk.stem import PorterStemmer
-
+import sys
 import pickle
 
 def remove_punctuations(current):
@@ -20,6 +20,8 @@ stopwords = f.read().splitlines()
 for i in range(len(stopwords)):
     stopwords[i] = remove_punctuations(stopwords[i])
 stopwords = set(stopwords)
+
+
 class InvertedIndex():
     
     def __init__(self):
@@ -27,7 +29,6 @@ class InvertedIndex():
         self.docmap = {}
 
     def  __add_document(self, doc_id, text):
-        self.docmap[doc_id] = text
         tokens = tokenizeText(text)
         for token in tokens:
             if token not in self.index:
@@ -46,8 +47,11 @@ class InvertedIndex():
             data = json.load(file)
 
         for movie in data["movies"]:
+            
+            self.docmap[movie["id"]] = movie
             text = f"{movie['title']} {movie['description']}"
             self.__add_document(movie["id"],text)
+
     def save(self):
         
         with open("cache/index.pkl","wb") as index_file:
@@ -57,11 +61,13 @@ class InvertedIndex():
             pickle.dump(self.docmap,docmap_file)
 
 
-def build_command():
-    inverted_index = InvertedIndex()
-    inverted_index.Build()
-    inverted_index.save()
-    print(f"First document for token 'merida' = {inverted_index.get_documents('merida')[0]}")
+    def load(self):
+        with open("cache/index.pkl", "rb") as index_file:
+            self.index = pickle.load(index_file)
+            
+        with open("cache/docmap.pkl", "rb") as docmap_file:
+            self.docmap = pickle.load(docmap_file)
+
 
 stemmer = PorterStemmer()
 def tokenizeText(text:str,stop_words = stopwords):
@@ -71,13 +77,19 @@ def tokenizeText(text:str,stop_words = stopwords):
     for i in split_text:
         if i not in stop_words:
             valid_token.append(i)
-    
+
     filtered_tokens = []
     for token in valid_token:
         filtered_tokens.append(stemmer.stem(token))
     return filtered_tokens
 
 
+
+def build_command():
+    inverted_index = InvertedIndex()
+    inverted_index.Build()
+    inverted_index.save()
+    # print(f"First document for token 'merida' = {inverted_index.get_documents('merida')[0]}")
 
 
 def main() -> None:
@@ -95,28 +107,35 @@ def main() -> None:
         case "build":
             build_command()
         case "search":
-
-            with open("data/movies.json","r") as file:
-                d = json.load(file)
-            res = []
+            InvIndex = InvertedIndex()
+            try: 
+                InvIndex.load()
+            except FileNotFoundError:
+                print("Error: File not Found, Try using build command first ")
             
             filtered_query = tokenizeText(args.query,stop_words=stopwords)
-
-
-            print(f"Searching for: {filtered_query}")
-
-            for movie in d["movies"]:
-                movie_title = movie["title"]
-                filtered_title = tokenizeText(movie_title,stop_words=stopwords) 
-                for query in filtered_query:
-                   
-                    if query in filtered_title:
-                        res.append(movie_title)
+            
+            matched_ids = set()
+            for token in filtered_query:
+                doc_ids = InvIndex.get_documents(token)
+                
+                for doc_id in doc_ids:
+                    matched_ids.add(doc_id)
+                    if len(matched_ids) == 5:
                         break
-                        
-            for i in range(len(res)):
-                print(f"{i+1}. {res[i]}")
+                
+                if len(matched_ids) == 5:
+                    break
+            
+            print(matched_ids)
 
+            # for i in range(len(res)):
+            #     print(f"{i+1}. {res[i]}")            
+            sorted_doc_ids = sorted(list(matched_ids))
+            
+            # Print the final resulting document details cleanly
+            for i, doc_id in enumerate(sorted_doc_ids):
+                print(f"{i+1}. [ID: {doc_id}] {InvIndex.docmap[doc_id]['title']}")
 
         case _:
             parser.print_help()
