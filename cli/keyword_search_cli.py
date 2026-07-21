@@ -1,3 +1,4 @@
+import os
 import math
 import string
 import argparse
@@ -11,6 +12,7 @@ from collections import Counter
 #HELPER FUNCTIONS AND VARIABLES
 
 BM25_K1 = 1.5
+BM25_B = 0.75
 
 def remove_punctuations(current):
 
@@ -58,14 +60,14 @@ def bm25_idf_command(term):
     return float(bm25_value)
 
 
-def bm25_tf_command(doc_id, term, k1=BM25_K1):
+def bm25_tf_command(doc_id, term, k1=BM25_K1,b= BM25_B):
     invIndex = InvertedIndex()
     try:
         invIndex.load()
     except FileNotFoundError:
         print("Error: File not Found, Try using build command first ")
     term = tokenize_single_term(term)
-    return invIndex.get_bm25_tf(doc_id=doc_id,term=term,k1=k1)
+    return invIndex.get_bm25_tf(doc_id=doc_id,term=term,k1=k1,b=b)
 
 
 class InvertedIndex():
@@ -74,10 +76,12 @@ class InvertedIndex():
         self.index = {}
         self.docmap = {}
         self.term_frequencies = {}
+        self.doc_lengths = {}
+        self.doc_lengths_path = os.path.join("cache/", "doc_lengths.pkl")
 
     def  __add_document(self, doc_id, text):
-        
         tokens = tokenizeText(text)
+        self.doc_lengths[doc_id] = len(tokens)
         self.term_frequencies[doc_id] = Counter(tokens)
         for token in tokens:
             if token not in self.index:
@@ -94,35 +98,31 @@ class InvertedIndex():
     def Build(self):
         with open("data/movies.json","r") as file:
             data = json.load(file)
-
         for movie in data["movies"]:
-            
             self.docmap[movie["id"]] = movie
             text = f"{movie['title']} {movie['description']}"
             self.__add_document(movie["id"],text)
 
     def save(self):
-        
         with open("cache/index.pkl","wb") as index_file:
             pickle.dump(self.index,index_file)
-        
         with open("cache/docmap.pkl","wb") as docmap_file:
             pickle.dump(self.docmap,docmap_file)
-
         with open("cache/term_frequencies.pkl","wb") as term_frequencies_file:
             pickle.dump(self.term_frequencies,term_frequencies_file)
+        with open("cache/doc_lengths.pkl","wb") as doc_lengths_file:
+            pickle.dump(self.doc_lengths,doc_lengths_file)
 
     def load(self):
         with open("cache/index.pkl", "rb") as index_file:
             self.index = pickle.load(index_file)
-            
         with open("cache/docmap.pkl", "rb") as docmap_file:
             self.docmap = pickle.load(docmap_file)
-
-
         with open("cache/term_frequencies.pkl", "rb") as term_frequencies_file:
             self.term_frequencies = pickle.load(term_frequencies_file)
-
+        with open("cache/doc_lengths.pkl", "rb") as doc_lengths_file:
+            self.doc_lengths = pickle.load(doc_lengths_file)
+    
     def get_tf(self,doc_id,term):
         if doc_id not in self.term_frequencies:
             return 0
@@ -136,10 +136,51 @@ class InvertedIndex():
         bm25_idf = math.log((N-df+0.5) / (df+0.5)+1)
         return bm25_idf
 
-    def get_bm25_tf(self, doc_id, term, k1=BM25_K1):
-        raw_tf = self.get_tf(doc_id,term)
-        bm25_staturation_formula = (raw_tf*(k1+1))/ (raw_tf+k1)
-        return bm25_staturation_formula
+    def get_bm25_tf(self, doc_id, term, k1=BM25_K1, b=BM25_B):
+        raw_tf = self.get_tf(doc_id, term)
+        doc_length = self.doc_lengths.get(doc_id, 0)
+        avg_len = self.__get_avg_doc_length()
+        if avg_len == 0:
+            length_norm = 1.0
+        else:
+            length_norm = 1 - b + b * (doc_length / avg_len)
+        bm25_tf = (raw_tf * (k1 + 1)) / (raw_tf + k1 * length_norm)
+        return bm25_tf
+        
+    def __get_avg_doc_length(self) -> float:
+        if not self.doc_lengths:
+            return 0.0
+        total = sum(self.doc_lengths.values())
+        return total/len(self.doc_lengths)
+
+    def bm25(self, doc_id, term):
+        return self.get_bm25_idf(term)*self.get_bm25_tf(doc_id,term)
+    
+    def bm25_search(self, query, limit=5):
+        tokens = tokenizeText(query)
+        scores = {}
+        for doc_id in self.docmap:
+            score = 0.0
+            for token in tokens:
+                score+= self.bm25(doc_id,token)
+            scores[doc_id] = score
+        sorted_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        
+        final = []
+        for ind,score in sorted_docs[:limit]:
+            final.append(
+                    {
+                        "title":self.docmap[ind]['title'],
+                        "id" : ind,
+                        "score":score
+                    }
+                )
+
+        
+
+        return final
+
+
 
 def build_command():
     inverted_index = InvertedIndex()
@@ -177,6 +218,10 @@ def main() -> None:
     bm25_tf_parser.add_argument("doc_id", type=int, help="Document ID")
     bm25_tf_parser.add_argument("term", type=str, help="Term to get BM25 TF score for")
     bm25_tf_parser.add_argument("k1", type=float, nargs='?', default=BM25_K1, help="Tunable BM25 K1 parameter")
+    bm25_tf_parser.add_argument("b", type=float, nargs='?', default=BM25_B, help="Tunable BM25 b parameter")
+    
+    bm25search_parser = subparsers.add_parser("bm25search", help="Search movies using full BM25 scoring")
+    bm25search_parser.add_argument("query", type=str, help="Search query")
 
     args = parser.parse_args()
     
@@ -257,8 +302,21 @@ def main() -> None:
         case "bm25tf":
             bm25tf = bm25_tf_command(args.doc_id,args.term)
             print(f"BM25 TF score of '{args.term}' in document '{args.doc_id}': {bm25tf:.2f}")
+        
+        case "bm25search":
+
+            invIndex = InvertedIndex()
+            try:
+                invIndex.load()
+            except FileNotFoundError:
+                print("Error: File not Found, Try using build command first ")
+
+            results = invIndex.bm25_search(args.query)
+            for i, res in enumerate(results, 1):
+                print(f"{i}. ({res['id']}) {res['title']} - Score: {res['score']:.2f}")
         case _:
             parser.print_help()
+
 
 
 if __name__ == "__main__":
